@@ -36,8 +36,8 @@ This demo recreates the visual effects of the original 1989 Atari ST demo, featu
 
 1. Clone this repository:
 ```bash
-git clone https://github.com/olivierh59500/grodan-kvack-demo
-cd grodan-kvack-demo
+git clone https://github.com/olivierh59500/grodan-kvack-kvack-demo
+cd grodan-kvack-kvack-demo
 ```
 
 2. Download dependencies:
