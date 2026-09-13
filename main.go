@@ -1,4 +1,5 @@
-package main
+// Package grodan contains the platform-independent demo.
+package grodan
 
 import (
 	"bytes"
@@ -48,18 +49,21 @@ var (
 
 // YMPlayer wraps the YM player for Ebiten
 type YMPlayer struct {
-	player       *stsound.StSound
-	sampleRate   int
-	buffer       []int16
-	mutex        sync.Mutex
-	position     int64
-	totalSamples int64
-	loop         bool
-	volume       float64
+	player     *stsound.StSound
+	sampleRate int
+	buffer     []int16
+	mutex      sync.Mutex
+	position   int64
+	totalBytes int64
+	loop       bool
 }
 
 // NewYMPlayer creates a new YM player
 func NewYMPlayer(data []byte, sampleRate int, loop bool) (*YMPlayer, error) {
+	if sampleRate <= 0 {
+		return nil, fmt.Errorf("sample rate must be positive: %d", sampleRate)
+	}
+
 	player := stsound.CreateWithRate(sampleRate)
 
 	if err := player.LoadMemory(data); err != nil {
@@ -73,12 +77,11 @@ func NewYMPlayer(data []byte, sampleRate int, loop bool) (*YMPlayer, error) {
 	totalSamples := int64(info.MusicTimeInMs) * int64(sampleRate) / 1000
 
 	return &YMPlayer{
-		player:       player,
-		sampleRate:   sampleRate,
-		buffer:       make([]int16, 4096),
-		totalSamples: totalSamples,
-		loop:         loop,
-		volume:       0.7,
+		player:     player,
+		sampleRate: sampleRate,
+		buffer:     make([]int16, 4096),
+		totalBytes: totalSamples * 4, // 16-bit stereo: four bytes per frame.
+		loop:       loop,
 	}, nil
 }
 
@@ -87,9 +90,17 @@ func (y *YMPlayer) Read(p []byte) (n int, err error) {
 	y.mutex.Lock()
 	defer y.mutex.Unlock()
 
-	samplesNeeded := len(p) / 4
-	outBuffer := make([]int16, samplesNeeded*2)
+	if y.player == nil {
+		return 0, io.ErrClosedPipe
+	}
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if len(p) < 4 {
+		return 0, io.ErrShortBuffer
+	}
 
+	samplesNeeded := len(p) / 4
 	processed := 0
 	for processed < samplesNeeded {
 		chunkSize := samplesNeeded - processed
@@ -99,34 +110,25 @@ func (y *YMPlayer) Read(p []byte) (n int, err error) {
 
 		if !y.player.Compute(y.buffer[:chunkSize], chunkSize) {
 			if !y.loop {
-				for i := processed * 2; i < len(outBuffer); i++ {
-					outBuffer[i] = 0
-				}
 				err = io.EOF
 				break
 			}
 		}
 
 		for i := 0; i < chunkSize; i++ {
-			sample := int16(float64(y.buffer[i]) * y.volume)
-			outBuffer[(processed+i)*2] = sample
-			outBuffer[(processed+i)*2+1] = sample
+			sample := y.buffer[i]
+			offset := (processed + i) * 4
+			p[offset] = byte(sample)
+			p[offset+1] = byte(sample >> 8)
+			p[offset+2] = byte(sample)
+			p[offset+3] = byte(sample >> 8)
 		}
 
 		processed += chunkSize
-		y.position += int64(chunkSize)
 	}
 
-	buf := make([]byte, 0, len(outBuffer)*2)
-	for _, sample := range outBuffer {
-		buf = append(buf, byte(sample), byte(sample>>8))
-	}
-
-	copy(p, buf)
-	n = len(buf)
-	if n > len(p) {
-		n = len(p)
-	}
+	n = processed * 4
+	y.position += int64(n)
 
 	return n, err
 }
@@ -135,6 +137,9 @@ func (y *YMPlayer) Read(p []byte) (n int, err error) {
 func (y *YMPlayer) Seek(offset int64, whence int) (int64, error) {
 	y.mutex.Lock()
 	defer y.mutex.Unlock()
+	if y.player == nil {
+		return 0, io.ErrClosedPipe
+	}
 
 	var newPos int64
 	switch whence {
@@ -143,7 +148,7 @@ func (y *YMPlayer) Seek(offset int64, whence int) (int64, error) {
 	case io.SeekCurrent:
 		newPos = y.position + offset
 	case io.SeekEnd:
-		newPos = y.totalSamples + offset
+		newPos = y.totalBytes + offset
 	default:
 		return 0, fmt.Errorf("invalid whence: %d", whence)
 	}
@@ -151,10 +156,14 @@ func (y *YMPlayer) Seek(offset int64, whence int) (int64, error) {
 	if newPos < 0 {
 		newPos = 0
 	}
-	if newPos > y.totalSamples {
-		newPos = y.totalSamples
+	if newPos > y.totalBytes {
+		newPos = y.totalBytes
 	}
 
+	// Ebitengine seeks PCM streams in bytes. StSound seeks in milliseconds.
+	newPos -= newPos % 4
+	milliseconds := newPos / 4 * 1000 / int64(y.sampleRate)
+	y.player.Seek(uint32(milliseconds))
 	y.position = newPos
 	return newPos, nil
 }
@@ -174,6 +183,7 @@ func (y *YMPlayer) Close() error {
 // CharMapping represents character position in font image
 type CharMapping struct {
 	x, y, width, height int
+	drawable            bool
 }
 
 // FontMap manages character mappings for a bitmap font
@@ -198,11 +208,20 @@ func (fm *FontMap) AddChar(char rune, col, row int, width int) {
 		width = fm.charWidth
 	}
 	fm.chars[char] = CharMapping{
-		x:      col * fm.charWidth,
-		y:      row * fm.charHeight,
-		width:  width,
-		height: fm.charHeight,
+		x:        col * fm.charWidth,
+		y:        row * fm.charHeight,
+		width:    width,
+		height:   fm.charHeight,
+		drawable: true,
 	}
+}
+
+// AddBlank adds spacing for a character that has no glyph in the font image.
+func (fm *FontMap) AddBlank(char rune, width int) {
+	if width == 0 {
+		width = fm.charWidth
+	}
+	fm.chars[char] = CharMapping{width: width, height: fm.charHeight}
 }
 
 // InitBigScrollFont initializes the big scroll font (24x33)
@@ -267,8 +286,8 @@ func initBigScrollFont() *FontMap {
 	fm.AddChar('Z', 8, 5, 0)
 
 	// Space is handled separately (no graphic)
-	fm.AddChar(' ', 0, 0, 24) // Use width but no actual drawing
-	fm.AddChar('-', 0, 0, 24) // Missing in font, use space width
+	fm.AddBlank(' ', 24)
+	fm.AddBlank('-', 24)
 
 	return fm
 }
@@ -323,22 +342,22 @@ func initUpScrollFont() *FontMap {
 	fm.AddChar('Z', 8, 5, 0)
 
 	// Numbers 0-9 (not in this font, but referenced in text)
-	fm.AddChar('0', 0, 0, 33)
-	fm.AddChar('1', 0, 0, 33)
-	fm.AddChar('2', 0, 0, 33)
-	fm.AddChar('3', 0, 0, 33)
-	fm.AddChar('4', 0, 0, 33)
-	fm.AddChar('5', 0, 0, 33)
-	fm.AddChar('6', 0, 0, 33)
-	fm.AddChar('7', 0, 0, 33)
-	fm.AddChar('8', 0, 0, 33)
-	fm.AddChar('9', 0, 0, 33)
+	fm.AddBlank('0', 33)
+	fm.AddBlank('1', 33)
+	fm.AddBlank('2', 33)
+	fm.AddBlank('3', 33)
+	fm.AddBlank('4', 33)
+	fm.AddBlank('5', 33)
+	fm.AddBlank('6', 33)
+	fm.AddBlank('7', 33)
+	fm.AddBlank('8', 33)
+	fm.AddBlank('9', 33)
 
 	// Space and missing characters
-	fm.AddChar(' ', 0, 0, 33)
-	fm.AddChar('-', 0, 0, 33)
-	fm.AddChar(',', 0, 0, 33)
-	fm.AddChar('\'', 0, 0, 33)
+	fm.AddBlank(' ', 33)
+	fm.AddBlank('-', 33)
+	fm.AddBlank(',', 33)
+	fm.AddBlank('\'', 33)
 
 	return fm
 }
@@ -404,33 +423,44 @@ func initSmallFont() *FontMap {
 	fm.AddChar('Z', 8, 5, 0)
 
 	// Space and missing characters
-	fm.AddChar(' ', 0, 0, 8)
-	fm.AddChar('-', 0, 0, 8)
-	fm.AddChar(',', 0, 0, 8)
-	fm.AddChar('"', 0, 0, 8)
+	fm.AddBlank(' ', 8)
+	fm.AddBlank('-', 8)
+	fm.AddBlank(',', 8)
+	fm.AddBlank('"', 8)
 
 	return fm
 }
 
 // ScrollText manages scrolling text
 type ScrollText struct {
-	text     string
-	fontImg  *ebiten.Image
-	fontMap  *FontMap
-	scrollX  float64
-	speed    float64
-	vertical bool // For vertical scrolling
+	text          string
+	fontImg       *ebiten.Image
+	fontMap       *FontMap
+	scrollX       float64
+	speed         float64
+	contentLength float64
+	vertical      bool // For vertical scrolling
 }
 
 // NewScrollText creates a new scrolling text
 func NewScrollText(text string, fontImg *ebiten.Image, fontMap *FontMap, speed float64, vertical bool) *ScrollText {
-	return &ScrollText{
+	s := &ScrollText{
 		text:     text,
 		fontImg:  fontImg,
 		fontMap:  fontMap,
 		speed:    speed,
 		vertical: vertical,
 	}
+	for _, char := range text {
+		if vertical {
+			s.contentLength += float64(fontMap.charHeight)
+			continue
+		}
+		if mapping, ok := fontMap.chars[unicode.ToUpper(char)]; ok {
+			s.contentLength += float64(mapping.width)
+		}
+	}
+	return s
 }
 
 // Update updates the scroll position
@@ -438,22 +468,12 @@ func (s *ScrollText) Update() {
 	if s.vertical {
 		s.scrollX += s.speed // Move up (positive direction)
 		// For vertical scroll, reset when text has completely scrolled off top
-		totalHeight := float64(len(s.text) * s.fontMap.charHeight)
-		if s.scrollX > totalHeight+400 {
+		if s.scrollX > s.contentLength+screenHeight {
 			s.scrollX = -100 // Start from below screen
 		}
 	} else {
 		s.scrollX -= s.speed
-		// Calculate total width of text
-		totalWidth := 0
-		for _, ch := range s.text {
-			if mapping, ok := s.fontMap.chars[ch]; ok {
-				totalWidth += mapping.width
-			} else if ch == ' ' {
-				totalWidth += s.fontMap.charWidth
-			}
-		}
-		if s.scrollX < -float64(totalWidth) {
+		if s.scrollX < -s.contentLength {
 			s.scrollX = float64(screenWidth)
 		}
 	}
@@ -463,11 +483,14 @@ func (s *ScrollText) Update() {
 func (s *ScrollText) Draw(dst *ebiten.Image, y float64, scale float64) {
 	if s.vertical {
 		// Vertical scrolling - text moves from bottom to top
-		yPos := 400 - s.scrollX // Start from bottom of screen
+		yPos := screenHeight - s.scrollX // Start from bottom of screen
 
 		// Draw text in correct order (not reversed)
 		for _, char := range s.text {
-			if yPos > -float64(s.fontMap.charHeight)*scale && yPos < 400 {
+			if yPos >= screenHeight {
+				break
+			}
+			if yPos > -float64(s.fontMap.charHeight)*scale && yPos < screenHeight {
 				s.drawChar(dst, char, 0, yPos, scale)
 			}
 			yPos += float64(s.fontMap.charHeight) * scale
@@ -476,13 +499,14 @@ func (s *ScrollText) Draw(dst *ebiten.Image, y float64, scale float64) {
 		// Horizontal scrolling
 		x := s.scrollX
 		for _, char := range s.text {
-			if mapping, ok := s.fontMap.chars[char]; ok {
+			if x >= screenWidth {
+				break
+			}
+			if mapping, ok := s.fontMap.chars[unicode.ToUpper(char)]; ok {
 				if x > -float64(mapping.width)*scale && x < float64(screenWidth) {
 					s.drawChar(dst, char, x, y, scale)
 				}
 				x += float64(mapping.width) * scale
-			} else if char == ' ' {
-				x += float64(s.fontMap.charWidth) * scale
 			}
 		}
 	}
@@ -494,7 +518,7 @@ func (s *ScrollText) drawChar(dst *ebiten.Image, char rune, x, y, scale float64)
 	char = unicode.ToUpper(char)
 
 	mapping, ok := s.fontMap.chars[char]
-	if !ok {
+	if !ok || !mapping.drawable {
 		return // Character not in font map
 	}
 
@@ -561,9 +585,10 @@ type Game struct {
 	scrollText4 *ScrollText
 
 	// Audio
-	audioContext *audio.Context
-	audioPlayer  *audio.Player
-	ymPlayer     *YMPlayer
+	audioContext     *audio.Context
+	audioPlayer      *audio.Player
+	ymPlayer         *YMPlayer
+	audioInitialized bool
 }
 
 // NewGame creates a new game instance
@@ -606,59 +631,27 @@ func NewGame() *Game {
 	// Initialize scroll texts
 	g.initScrollTexts()
 
-	// Initialize audio
-	g.initAudio()
-
 	return g
 }
 
 // loadImages loads all image assets
 func (g *Game) loadImages() {
-	var err error
+	g.bgGreen = mustLoadImage("Grodan_green.png", bgGreenData)
+	g.bgPink = mustLoadImage("Grodan_pink.png", bgPinkData)
+	g.upRaster = mustLoadImage("upscrollraster.png", upRasterData)
+	g.bsRaster = mustLoadImage("bigscrollraster.png", bsRasterData)
+	g.sprite = mustLoadImage("sprite.png", spriteData)
+	g.bsFont = mustLoadImage("bsfont.png", bsFontData)
+	g.upFont = mustLoadImage("upfonts.png", upFontData)
+	g.lFont = mustLoadImage("lfont.png", lFontData)
+}
 
-	// Load background images
-	img, _, err := image.Decode(bytes.NewReader(bgGreenData))
-	if err == nil {
-		g.bgGreen = ebiten.NewImageFromImage(img)
+func mustLoadImage(name string, data []byte) *ebiten.Image {
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		panic(fmt.Errorf("decode embedded image %s: %w", name, err))
 	}
-
-	img, _, err = image.Decode(bytes.NewReader(bgPinkData))
-	if err == nil {
-		g.bgPink = ebiten.NewImageFromImage(img)
-	}
-
-	// Load raster images
-	img, _, err = image.Decode(bytes.NewReader(upRasterData))
-	if err == nil {
-		g.upRaster = ebiten.NewImageFromImage(img)
-	}
-
-	img, _, err = image.Decode(bytes.NewReader(bsRasterData))
-	if err == nil {
-		g.bsRaster = ebiten.NewImageFromImage(img)
-	}
-
-	// Load sprite
-	img, _, err = image.Decode(bytes.NewReader(spriteData))
-	if err == nil {
-		g.sprite = ebiten.NewImageFromImage(img)
-	}
-
-	// Load fonts
-	img, _, err = image.Decode(bytes.NewReader(bsFontData))
-	if err == nil {
-		g.bsFont = ebiten.NewImageFromImage(img)
-	}
-
-	img, _, err = image.Decode(bytes.NewReader(upFontData))
-	if err == nil {
-		g.upFont = ebiten.NewImageFromImage(img)
-	}
-
-	img, _, err = image.Decode(bytes.NewReader(lFontData))
-	if err == nil {
-		g.lFont = ebiten.NewImageFromImage(img)
-	}
+	return ebiten.NewImageFromImage(img)
 }
 
 // initBackgrounds initializes the background canvases
@@ -742,6 +735,13 @@ func (g *Game) initAudio() {
 
 // Update updates the game state
 func (g *Game) Update() error {
+	// On Android, NewGame runs before the Activity has installed its context.
+	// Opening the audio device here avoids blocking the application startup.
+	if !g.audioInitialized {
+		g.audioInitialized = true
+		g.initAudio()
+	}
+
 	// Update background 1 animation
 	g.bgcount += 0.1
 
@@ -810,14 +810,8 @@ func (g *Game) Update() error {
 		g.scrollText4.Update()
 	}
 
-	// Update vertical scroll
-	if g.scrollText2 != nil && g.upFontMap != nil {
-		g.scrollText2.scrollX += 3 // Vertical scroll moves up
-		// For vertical scroll, check if we need to reset
-		totalHeight := float64(len(g.scrollText2.text) * g.upFontMap.charHeight)
-		if g.scrollText2.scrollX > totalHeight+400 {
-			g.scrollText2.scrollX = -100
-		}
+	if g.scrollText2 != nil {
+		g.scrollText2.Update()
 	}
 
 	return nil
@@ -895,7 +889,7 @@ func (g *Game) drawBigScroll(screen *ebiten.Image) {
 	// Apply raster effect
 	op.GeoM.Reset()
 	op.GeoM.Scale(4, 2)
-	op.CompositeMode = ebiten.CompositeModeSourceAtop
+	op.Blend = ebiten.BlendSourceAtop
 	g.bs2Canvas.DrawImage(g.bsRaster, op)
 
 	// Draw to screen
@@ -919,7 +913,7 @@ func (g *Game) drawUpScroll(screen *ebiten.Image) {
 	// Apply raster effect
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Scale(2, 2)
-	op.CompositeMode = ebiten.CompositeModeSourceAtop
+	op.Blend = ebiten.BlendSourceAtop
 	g.upCanvas.DrawImage(g.upRaster, op)
 
 	// Draw to screen at multiple positions
@@ -948,7 +942,7 @@ func (g *Game) drawSmallScrolls(screen *ebiten.Image) {
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Translate(0, -16)
 	op.GeoM.Scale(2, 2)
-	op.CompositeMode = ebiten.CompositeModeSourceAtop
+	op.Blend = ebiten.BlendSourceAtop
 	g.lCanvas.DrawImage(g.upRaster, op)
 
 	// Draw to screen
@@ -964,7 +958,7 @@ func (g *Game) drawSmallScrolls(screen *ebiten.Image) {
 	op = &ebiten.DrawImageOptions{}
 	op.GeoM.Translate(0, -64)
 	op.GeoM.Scale(2, 2)
-	op.CompositeMode = ebiten.CompositeModeSourceAtop
+	op.Blend = ebiten.BlendSourceAtop
 	g.l2Canvas.DrawImage(g.upRaster, op)
 
 	// Draw to screen
@@ -987,17 +981,4 @@ func (g *Game) Cleanup() {
 	if g.ymPlayer != nil {
 		g.ymPlayer.Close()
 	}
-}
-
-func main() {
-	ebiten.SetWindowSize(screenWidth, screenHeight)
-	ebiten.SetWindowTitle("Grodan and Kvack Kvack Demo")
-
-	game := NewGame()
-
-	if err := ebiten.RunGame(game); err != nil {
-		log.Fatal(err)
-	}
-
-	game.Cleanup()
 }

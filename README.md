@@ -24,7 +24,7 @@ This demo recreates the visual effects of the original 1989 Atari ST demo, featu
 
 ## Requirements
 
-- Go 1.18 or higher
+- Go 1.25 or higher
 - Dependencies will be automatically downloaded by Go modules
 
 ## Dependencies
@@ -59,13 +59,33 @@ go mod download
 ## Running the Demo
 
 ```bash
-go run main.go
+go run ./cmd/grodan
 ```
 
 Or build and run:
 ```bash
-go build -o grodan-demo
+go build -o grodan-demo ./cmd/grodan
 ./grodan-demo
+```
+
+## Running on Android
+
+The repository includes an Android shell configured for an ARM64 Google Pixel.
+Connect and authorize exactly one device over USB, then run:
+
+```bash
+./scripts/run-android.sh
+```
+
+The script generates the Ebitengine AAR, builds the debug APK, installs it, and
+starts `com.olivierh.grodankvackkvack/.MainActivity`. It detects the Homebrew
+Android SDK and Java 17 paths documented in `GUIDE_ANDROID_EBITENGINE_PIXEL.md`.
+
+To validate the Go code without launching the demo:
+
+```bash
+go test ./...
+go vet ./...
 ```
 
 ## Technical Details

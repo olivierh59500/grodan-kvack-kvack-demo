@@ -46,6 +46,14 @@ temp/
 /build/
 /target/
 
+# Android/Gradle build products
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/app/libs/*.aar
+/android/app/libs/*-sources.jar
+/android/local.properties
+
 # Docker
 .dockerignore
 docker-compose.override.yml
