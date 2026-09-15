@@ -11,10 +11,11 @@ func run() error {
 	ebiten.SetWindowSize(640, 400)
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 	ebiten.SetWindowTitle("Grodan and Kvack Kvack Demo")
+	ebiten.SetScreenClearedEveryFrame(false)
 
 	game := demo.NewGame()
 	defer game.Cleanup()
-	return ebiten.RunGame(game)
+	return ebiten.RunGame(newDrawOnUpdateGame(game))
 }
 
 func main() {

@@ -88,6 +88,24 @@ go test ./...
 go vet ./...
 ```
 
+## Performance notes
+
+- YM synthesis uses `ym-player` revision `3f73bdca82e5`, 48 kHz output, and a
+  reusable zero-allocation float32 stereo stream.
+- The desktop launcher only rebuilds a frame after a game update. This avoids
+  rendering the same state twice on 120 Hz and faster displays while the demo
+  continues to run at 60 updates per second.
+- Font glyphs, sprite frames, and raster slices are cached during startup.
+- Scrolling text uses binary search to visit only visible glyphs.
+- Transient effects use unmanaged render targets that are fully reconstructed
+  every frame. Large scrolling backgrounds are tiled directly to reduce GPU
+  memory use.
+
+On the Pixel 10a used for profiling, these changes kept presentation at about
+60 FPS with no missed VSync in the sampled window. Compared with commit
+`1ac0693`, active graphics memory dropped from roughly 183 MB to 100 MB. Exact
+CPU and memory figures depend on device state and build mode.
+
 ## Technical Details
 
 ### Font Mapping
