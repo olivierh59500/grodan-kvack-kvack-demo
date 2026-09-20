@@ -1,17 +1,20 @@
 // Package grodan contains the platform-independent demo.
 package grodan
 
+import originalassets "grodan-kvack-kvack-demo"
+
 import (
 	"bytes"
-	_ "embed"
+
 	"fmt"
+	"github.com/olivierh59500/democonstructionkit/composite"
+	"github.com/olivierh59500/democonstructionkit/scrolling"
 	"image"
 	"image/color"
 	_ "image/png"
 	"io"
 	"log"
 	"math"
-	"sort"
 	"sync"
 	"unicode"
 
@@ -36,27 +39,28 @@ const (
 
 // Embedded assets
 var (
-	//go:embed assets/Grodan_green.png
-	bgGreenData []byte
-	//go:embed assets/Grodan_pink.png
-	bgPinkData []byte
-	//go:embed assets/upscrollraster.png
-	upRasterData []byte
-	//go:embed assets/bigscrollraster.png
-	bsRasterData []byte
-	//go:embed assets/sprite.png
-	spriteData []byte
-	//go:embed assets/bsfont.png
-	bsFontData []byte
-	//go:embed assets/upfonts.png
-	upFontData []byte
-	//go:embed assets/lfont.png
-	lFontData []byte
-	//go:embed assets/music.ym
-	musicData []byte
+	bgGreenData = originalassets.DCKAssetBgGreenData()
+
+	bgPinkData = originalassets.DCKAssetBgPinkData()
+
+	upRasterData = originalassets.DCKAssetUpRasterData()
+
+	bsRasterData = originalassets.DCKAssetBsRasterData()
+
+	spriteData = originalassets.DCKAssetSpriteData()
+
+	bsFontData = originalassets.DCKAssetBsFontData()
+
+	upFontData = originalassets.DCKAssetUpFontData()
+
+	lFontData = originalassets.DCKAssetLFontData()
+
+	musicData = originalassets.
+
+		// YMPlayer wraps the YM player for Ebiten
+		DCKAssetMusicData()
 )
 
-// YMPlayer wraps the YM player for Ebiten
 type YMPlayer struct {
 	player *stsound.StSound
 	buffer []int16
@@ -410,6 +414,7 @@ type scrollGlyph struct {
 }
 
 type ScrollText struct {
+	renderer      *scrolling.Scrolling
 	glyphs        []scrollGlyph
 	scrollX       float64
 	speed         float64
@@ -449,6 +454,16 @@ func NewScrollText(text string, fontImg *ebiten.Image, fontMap *FontMap, speed f
 		})
 		s.contentLength += advance
 	}
+
+	glyphs := make([]scrolling.Glyph, len(s.glyphs))
+	for i, g := range s.glyphs {
+		glyphs[i] = scrolling.Glyph{Image: g.image, Advance: g.advance}
+	}
+	var err error
+	s.renderer, err = scrolling.New(scrolling.Config{Glyphs: glyphs, Vertical: vertical})
+	if err != nil {
+		panic(err)
+	}
 	return s
 }
 
@@ -483,46 +498,22 @@ func (s *ScrollText) Update() {
 
 // Draw draws the scrolling text
 func (s *ScrollText) Draw(dst *ebiten.Image, y, scaleX, scaleY float64) {
-	dstWidth := float64(dst.Bounds().Dx())
-	dstHeight := float64(dst.Bounds().Dy())
+	state := scrolling.IdentityState()
+	state.ScaleX = scaleX
+	state.ScaleY = scaleY
 	if s.vertical {
-		// Vertical scrolling - text moves from bottom to top
-		baseY := dstHeight - s.scrollX*scaleY
-		first := sort.Search(len(s.glyphs), func(i int) bool {
-			glyph := s.glyphs[i]
-			return baseY+(glyph.offset+glyph.advance)*scaleY > 0
-		})
-		for _, glyph := range s.glyphs[first:] {
-			yPos := baseY + glyph.offset*scaleY
-			if yPos >= dstHeight {
-				break
-			}
-			if glyph.image != nil {
-				op := &ebiten.DrawImageOptions{}
-				op.GeoM.Scale(scaleX, scaleY)
-				op.GeoM.Translate(0, yPos)
-				dst.DrawImage(glyph.image, op)
-			}
+		state.Y = float64(dst.Bounds().Dy()) - s.scrollX*scaleY
+		state.Map = func(g scrolling.Sample, op *ebiten.DrawImageOptions) bool {
+			return g.Y+g.Glyph.Advance*scaleY > 0 && g.Y < float64(dst.Bounds().Dy())
 		}
 	} else {
-		// Horizontal scrolling
-		first := sort.Search(len(s.glyphs), func(i int) bool {
-			glyph := s.glyphs[i]
-			return (s.scrollX+glyph.offset+glyph.advance)*scaleX > 0
-		})
-		for _, glyph := range s.glyphs[first:] {
-			x := (s.scrollX + glyph.offset) * scaleX
-			if x >= dstWidth {
-				break
-			}
-			if glyph.image != nil {
-				op := &ebiten.DrawImageOptions{}
-				op.GeoM.Scale(scaleX, scaleY)
-				op.GeoM.Translate(x, y*scaleY)
-				dst.DrawImage(glyph.image, op)
-			}
+		state.X = s.scrollX * scaleX
+		state.Y = y * scaleY
+		state.Map = func(g scrolling.Sample, op *ebiten.DrawImageOptions) bool {
+			return g.X+g.Glyph.Advance*scaleX > 0 && g.X < float64(dst.Bounds().Dx())
 		}
 	}
+	s.renderer.DrawAt(dst, state)
 }
 
 // Game represents the game state
@@ -825,7 +816,7 @@ func (g *Game) drawTiledBackground(screen, background *ebiten.Image, offsetX, of
 			}
 			op := &ebiten.DrawImageOptions{}
 			op.GeoM.Translate(tileX, tileY)
-			screen.DrawImage(background, op)
+			composite.Instance{Image: background, Options: *op}.Draw(screen)
 		}
 	}
 }
@@ -849,7 +840,7 @@ func (g *Game) drawSprites(screen *ebiten.Image) {
 		op.GeoM.Scale(2, 2)
 		op.GeoM.Translate(x, y)
 
-		screen.DrawImage(sprite, op)
+		composite.Instance{Image: sprite, Options: *op}.Draw(screen)
 	}
 }
 
@@ -869,7 +860,7 @@ func (g *Game) drawBigScroll(screen *ebiten.Image) {
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Scale(4, 2)
 	op.Blend = ebiten.BlendSourceAtop
-	g.bs2Canvas.DrawImage(g.bigScrollRaster, op)
+	composite.Instance{Image: g.bigScrollRaster, Options: *op}.Draw(g.bs2Canvas)
 
 	// Draw to screen
 	op = &ebiten.DrawImageOptions{}
@@ -893,7 +884,7 @@ func (g *Game) drawUpScroll(screen *ebiten.Image) {
 	maskOp := &ebiten.DrawImageOptions{}
 	maskOp.GeoM.Scale(2, 2)
 	maskOp.Blend = ebiten.BlendSourceAtop
-	g.upCanvas.DrawImage(g.upScrollRaster, maskOp)
+	composite.Instance{Image: g.upScrollRaster, Options: *maskOp}.Draw(g.upCanvas)
 
 	// Draw to screen at multiple positions
 	positions := [...]float64{0, 64, 128, 480, 544, 608}
@@ -919,13 +910,13 @@ func (g *Game) drawSmallScrolls(screen *ebiten.Image) {
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Scale(2, 2)
 	op.Blend = ebiten.BlendSourceAtop
-	g.smallCanvas.DrawImage(g.smallRasterTop, op)
+	composite.Instance{Image: g.smallRasterTop, Options: *op}.Draw(g.smallCanvas)
 
 	op = &ebiten.DrawImageOptions{}
 	op.GeoM.Scale(2, 2)
 	op.GeoM.Translate(0, 24)
 	op.Blend = ebiten.BlendSourceAtop
-	g.smallCanvas.DrawImage(g.smallRasterBottom, op)
+	composite.Instance{Image: g.smallRasterBottom, Options: *op}.Draw(g.smallCanvas)
 
 	op = &ebiten.DrawImageOptions{}
 	op.GeoM.Scale(2, 2)

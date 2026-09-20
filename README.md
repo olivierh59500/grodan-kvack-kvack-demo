@@ -181,3 +181,9 @@ This port is created for educational and preservation purposes. The original dem
 The original "Grodan and Kvack Kvack" demo was released in 1989 and was notable for being one of the first demos to showcase hardware scrolling on the Atari ST. The demo's name (Swedish for "The Frog and Quack Quack") was self-proclaimed by the creators as "probably the most stupid name in demo history."
 
 The demo was a response to claims that certain effects were impossible on the ST, particularly after seeing the Amiga's TechTech demo. TCB proved that with clever programming, the ST could achieve similar results.
+
+## Optional DCK version
+
+The original implementation remains at its original paths. Run it with `go run ./cmd/grodan`.
+
+The construction-kit version is in [dck/](dck/README.md). Run `go run ./dck/cmd/grodan` from this directory. Both versions share the original assets.
