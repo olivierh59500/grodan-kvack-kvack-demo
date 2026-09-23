@@ -1,26 +1,25 @@
 // Package grodan contains the platform-independent demo.
 package grodan
 
-import originalassets "grodan-kvack-kvack-demo"
-
 import (
 	"bytes"
-
 	"fmt"
-	"github.com/olivierh59500/democonstructionkit/composite"
-	"github.com/olivierh59500/democonstructionkit/scrolling"
+	originalassets "grodan-kvack-kvack-demo"
 	"image"
 	"image/color"
+
+	"github.com/olivierh59500/democonstructionkit/composite"
+	"github.com/olivierh59500/democonstructionkit/scrolling"
+	"github.com/olivierh59500/democonstructionkit/sound"
+
 	_ "image/png"
-	"io"
 	"log"
 	"math"
-	"sync"
 	"unicode"
 
 	"github.com/hajimehoshi/ebiten/v2"
+
 	audio "github.com/olivierh59500/democonstructionkit/sound/output"
-	"github.com/olivierh59500/ym-player/pkg/stsound"
 )
 
 const (
@@ -55,103 +54,8 @@ var (
 
 	lFontData = originalassets.DCKAssetLFontData()
 
-	musicData = originalassets.
-
-		// YMPlayer wraps the YM player for Ebiten
-		DCKAssetMusicData()
+	musicData = originalassets.DCKAssetMusicData()
 )
-
-type YMPlayer struct {
-	player *stsound.StSound
-	buffer []int16
-	mutex  sync.Mutex
-	loop   bool
-}
-
-// NewYMPlayer creates a new YM player
-func NewYMPlayer(data []byte, sampleRate int, loop bool) (*YMPlayer, error) {
-	if sampleRate <= 0 {
-		return nil, fmt.Errorf("sample rate must be positive: %d", sampleRate)
-	}
-
-	player := stsound.CreateWithRate(sampleRate)
-
-	if err := player.LoadMemory(data); err != nil {
-		player.Destroy()
-		return nil, fmt.Errorf("failed to load YM data: %w", err)
-	}
-
-	player.SetLoopMode(loop)
-
-	return &YMPlayer{
-		player: player,
-		buffer: make([]int16, 4096),
-		loop:   loop,
-	}, nil
-}
-
-// Read implements io.Reader
-func (y *YMPlayer) Read(p []byte) (n int, err error) {
-	y.mutex.Lock()
-	defer y.mutex.Unlock()
-
-	if y.player == nil {
-		return 0, io.ErrClosedPipe
-	}
-	if len(p) == 0 {
-		return 0, nil
-	}
-	if len(p) < 8 {
-		return 0, io.ErrShortBuffer
-	}
-
-	samplesNeeded := len(p) / 8
-	processed := 0
-	for processed < samplesNeeded {
-		chunkSize := samplesNeeded - processed
-		if chunkSize > len(y.buffer) {
-			chunkSize = len(y.buffer)
-		}
-
-		if !y.player.Compute(y.buffer[:chunkSize], chunkSize) {
-			if !y.loop {
-				clear(p[processed*8 : samplesNeeded*8])
-				err = io.EOF
-				break
-			}
-		}
-
-		for i := 0; i < chunkSize; i++ {
-			sample := float32(y.buffer[i]/2) / (1 << 15)
-			bits := math.Float32bits(sample)
-			offset := (processed + i) * 8
-			p[offset] = byte(bits)
-			p[offset+1] = byte(bits >> 8)
-			p[offset+2] = byte(bits >> 16)
-			p[offset+3] = byte(bits >> 24)
-			p[offset+4] = byte(bits)
-			p[offset+5] = byte(bits >> 8)
-			p[offset+6] = byte(bits >> 16)
-			p[offset+7] = byte(bits >> 24)
-		}
-
-		processed += chunkSize
-	}
-
-	return samplesNeeded * 8, err
-}
-
-// Close releases resources
-func (y *YMPlayer) Close() error {
-	y.mutex.Lock()
-	defer y.mutex.Unlock()
-
-	if y.player != nil {
-		y.player.Destroy()
-		y.player = nil
-	}
-	return nil
-}
 
 // CharMapping represents character position in font image
 type CharMapping struct {
@@ -569,7 +473,7 @@ type Game struct {
 	// Audio
 	audioContext     *audio.Context
 	audioPlayer      *audio.Player
-	ymPlayer         *YMPlayer
+	musicStream      *sound.Stream
 	audioInitialized bool
 }
 
@@ -675,19 +579,19 @@ func (g *Game) initAudio() {
 	g.audioContext = audio.NewContext(sampleRate)
 
 	var err error
-	g.ymPlayer, err = NewYMPlayer(musicData, sampleRate, true)
+	g.musicStream, err = sound.Open("music.ym", musicData, sound.Options{SampleRate: sampleRate, Loop: true, PCMFormat: sound.Float32, Gain: 0.5, Quantize16: true})
 	if err != nil {
-		log.Printf("Failed to create YM player: %v", err)
+		log.Printf("Failed to open music: %v", err)
 		return
 	}
 
-	g.audioPlayer, err = g.audioContext.NewPlayerF32(g.ymPlayer)
+	g.audioPlayer, err = g.audioContext.NewPlayerF32(g.musicStream)
 	if err != nil {
 		log.Printf("Failed to create audio player: %v", err)
-		if closeErr := g.ymPlayer.Close(); closeErr != nil {
-			log.Printf("Failed to close YM player: %v", closeErr)
+		if closeErr := g.musicStream.Close(); closeErr != nil {
+			log.Printf("Failed to close music stream: %v", closeErr)
 		}
-		g.ymPlayer = nil
+		g.musicStream = nil
 		return
 	}
 
@@ -937,10 +841,10 @@ func (g *Game) Cleanup() {
 		}
 		g.audioPlayer = nil
 	}
-	if g.ymPlayer != nil {
-		if err := g.ymPlayer.Close(); err != nil {
-			log.Printf("Failed to close YM player: %v", err)
+	if g.musicStream != nil {
+		if err := g.musicStream.Close(); err != nil {
+			log.Printf("Failed to close music stream: %v", err)
 		}
-		g.ymPlayer = nil
+		g.musicStream = nil
 	}
 }

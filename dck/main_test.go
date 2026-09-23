@@ -5,11 +5,13 @@ import (
 	"math"
 	"testing"
 
+	"github.com/olivierh59500/democonstructionkit/sound"
+
 	"github.com/hajimehoshi/ebiten/v2"
 )
 
-func TestYMPlayerReadProducesFloat32StereoWithoutAllocating(t *testing.T) {
-	player, err := NewYMPlayer(musicData, sampleRate, true)
+func TestMusicStreamReadProducesFloat32StereoWithoutAllocating(t *testing.T) {
+	player, err := sound.Open("music.ym", musicData, sound.Options{SampleRate: sampleRate, Loop: true, PCMFormat: sound.Float32, Gain: 0.5, Quantize16: true})
 	if err != nil {
 		t.Fatal(err)
 	}
