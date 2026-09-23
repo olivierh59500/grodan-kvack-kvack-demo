@@ -4,6 +4,7 @@ package grodan
 import (
 	"bytes"
 	"fmt"
+	"github.com/olivierh59500/democonstructionkit/presets"
 	originalassets "grodan-kvack-kvack-demo"
 	"image"
 	"image/color"
@@ -15,7 +16,6 @@ import (
 	_ "image/png"
 	"log"
 	"math"
-	"unicode"
 
 	"github.com/hajimehoshi/ebiten/v2"
 
@@ -57,331 +57,25 @@ var (
 	musicData = originalassets.DCKAssetMusicData()
 )
 
-// CharMapping represents character position in font image
-type CharMapping struct {
-	x, y, width, height int
-	drawable            bool
-}
-
-// FontMap manages character mappings for a bitmap font
-type FontMap struct {
-	chars       map[rune]CharMapping
-	glyphImages map[rune]*ebiten.Image
-	charWidth   int
-	charHeight  int
-}
-
-// NewFontMap creates a font map with automatic character detection
-func NewFontMap(charWidth, charHeight int) *FontMap {
-	return &FontMap{
-		chars:       make(map[rune]CharMapping),
-		glyphImages: make(map[rune]*ebiten.Image),
-		charWidth:   charWidth,
-		charHeight:  charHeight,
-	}
-}
-
-// AddChar adds a character mapping
-func (fm *FontMap) AddChar(char rune, col, row int, width int) {
-	if width == 0 {
-		width = fm.charWidth
-	}
-	fm.chars[char] = CharMapping{
-		x:        col * fm.charWidth,
-		y:        row * fm.charHeight,
-		width:    width,
-		height:   fm.charHeight,
-		drawable: true,
-	}
-}
-
-// AddBlank adds spacing for a character that has no glyph in the font image.
-func (fm *FontMap) AddBlank(char rune, width int) {
-	if width == 0 {
-		width = fm.charWidth
-	}
-	fm.chars[char] = CharMapping{width: width, height: fm.charHeight}
-}
-
-// InitBigScrollFont initializes the big scroll font (24x33)
-func initBigScrollFont() *FontMap {
-	fm := NewFontMap(24, 33)
-
-	// Row 0: [NA]![NA][NA][NA]'"()
-	fm.AddChar('!', 1, 0, 0)
-	fm.AddChar('\'', 5, 0, 0)
-	fm.AddChar('"', 6, 0, 0)
-	fm.AddChar('(', 7, 0, 0)
-	fm.AddChar(')', 8, 0, 0)
-
-	// Row 1: [NA][NA][NA][NA].,0123
-	fm.AddChar('.', 4, 1, 0)
-	fm.AddChar(',', 5, 1, 0)
-	fm.AddChar('0', 6, 1, 0)
-	fm.AddChar('1', 7, 1, 0)
-	fm.AddChar('2', 8, 1, 0)
-	fm.AddChar('3', 9, 1, 0)
-
-	// Row 2: 456789:[NA][NA][NA]
-	fm.AddChar('4', 0, 2, 0)
-	fm.AddChar('5', 1, 2, 0)
-	fm.AddChar('6', 2, 2, 0)
-	fm.AddChar('7', 3, 2, 0)
-	fm.AddChar('8', 4, 2, 0)
-	fm.AddChar('9', 5, 2, 0)
-	fm.AddChar(':', 6, 2, 0)
-
-	// Row 3: [NA]?[NA]ABCDEFG
-	fm.AddChar('?', 1, 3, 0)
-	fm.AddChar('A', 3, 3, 0)
-	fm.AddChar('B', 4, 3, 0)
-	fm.AddChar('C', 5, 3, 0)
-	fm.AddChar('D', 6, 3, 0)
-	fm.AddChar('E', 7, 3, 0)
-	fm.AddChar('F', 8, 3, 0)
-	fm.AddChar('G', 9, 3, 0)
-
-	// Row 4: HIJKLMNOPQ
-	fm.AddChar('H', 0, 4, 0)
-	fm.AddChar('I', 1, 4, 0)
-	fm.AddChar('J', 2, 4, 0)
-	fm.AddChar('K', 3, 4, 0)
-	fm.AddChar('L', 4, 4, 0)
-	fm.AddChar('M', 5, 4, 0)
-	fm.AddChar('N', 6, 4, 0)
-	fm.AddChar('O', 7, 4, 0)
-	fm.AddChar('P', 8, 4, 0)
-	fm.AddChar('Q', 9, 4, 0)
-
-	// Row 5: RSTUVWXYZ[NA]
-	fm.AddChar('R', 0, 5, 0)
-	fm.AddChar('S', 1, 5, 0)
-	fm.AddChar('T', 2, 5, 0)
-	fm.AddChar('U', 3, 5, 0)
-	fm.AddChar('V', 4, 5, 0)
-	fm.AddChar('W', 5, 5, 0)
-	fm.AddChar('X', 6, 5, 0)
-	fm.AddChar('Y', 7, 5, 0)
-	fm.AddChar('Z', 8, 5, 0)
-
-	// Space is handled separately (no graphic)
-	fm.AddBlank(' ', 24)
-	fm.AddBlank('-', 24)
-
-	return fm
-}
-
-// InitUpScrollFont initializes the vertical scroll font (33x29)
-func initUpScrollFont() *FontMap {
-	fm := NewFontMap(33, 29)
-
-	// Row 0: [NA]![NA][NA][NA][NA][NA][NA]()
-	fm.AddChar('!', 1, 0, 0)
-	fm.AddChar('(', 8, 0, 0)
-	fm.AddChar(')', 9, 0, 0)
-
-	// Row 1: [NA][NA][NA][NA].[NA][NA][NA][NA][NA]
-	fm.AddChar('.', 4, 1, 0)
-
-	// Row 2: [NA][NA][NA][NA][NA]#:[NA][NA][NA]
-	fm.AddChar('#', 5, 2, 0)
-	fm.AddChar(':', 6, 2, 0)
-
-	// Row 3: [NA]?[NA]ABCDEFG
-	fm.AddChar('?', 1, 3, 0)
-	fm.AddChar('A', 3, 3, 0)
-	fm.AddChar('B', 4, 3, 0)
-	fm.AddChar('C', 5, 3, 0)
-	fm.AddChar('D', 6, 3, 0)
-	fm.AddChar('E', 7, 3, 0)
-	fm.AddChar('F', 8, 3, 0)
-	fm.AddChar('G', 9, 3, 0)
-
-	// Row 4: HIJKLMNOPQ
-	fm.AddChar('H', 0, 4, 0)
-	fm.AddChar('I', 1, 4, 0)
-	fm.AddChar('J', 2, 4, 0)
-	fm.AddChar('K', 3, 4, 0)
-	fm.AddChar('L', 4, 4, 0)
-	fm.AddChar('M', 5, 4, 0)
-	fm.AddChar('N', 6, 4, 0)
-	fm.AddChar('O', 7, 4, 0)
-	fm.AddChar('P', 8, 4, 0)
-	fm.AddChar('Q', 9, 4, 0)
-
-	// Row 5: RSTUVWXYZ[NA]
-	fm.AddChar('R', 0, 5, 0)
-	fm.AddChar('S', 1, 5, 0)
-	fm.AddChar('T', 2, 5, 0)
-	fm.AddChar('U', 3, 5, 0)
-	fm.AddChar('V', 4, 5, 0)
-	fm.AddChar('W', 5, 5, 0)
-	fm.AddChar('X', 6, 5, 0)
-	fm.AddChar('Y', 7, 5, 0)
-	fm.AddChar('Z', 8, 5, 0)
-
-	// Numbers 0-9 (not in this font, but referenced in text)
-	fm.AddBlank('0', 33)
-	fm.AddBlank('1', 33)
-	fm.AddBlank('2', 33)
-	fm.AddBlank('3', 33)
-	fm.AddBlank('4', 33)
-	fm.AddBlank('5', 33)
-	fm.AddBlank('6', 33)
-	fm.AddBlank('7', 33)
-	fm.AddBlank('8', 33)
-	fm.AddBlank('9', 33)
-
-	// Space and missing characters
-	fm.AddBlank(' ', 33)
-	fm.AddBlank('-', 33)
-	fm.AddBlank(',', 33)
-	fm.AddBlank('\'', 33)
-
-	return fm
-}
-
-// InitSmallFont initializes the small font (8x8)
-func initSmallFont() *FontMap {
-	fm := NewFontMap(8, 8)
-
-	// Row 0: [NA]![NA][NA][NA][NA][NA]'()
-	fm.AddChar('!', 1, 0, 0)
-	fm.AddChar('\'', 7, 0, 0)
-	fm.AddChar('(', 8, 0, 0)
-	fm.AddChar(')', 9, 0, 0)
-
-	// Row 1: [NA][NA][NA][NA]./0123
-	fm.AddChar('.', 4, 1, 0)
-	fm.AddChar('/', 5, 1, 0)
-	fm.AddChar('0', 6, 1, 0)
-	fm.AddChar('1', 7, 1, 0)
-	fm.AddChar('2', 8, 1, 0)
-	fm.AddChar('3', 9, 1, 0)
-
-	// Row 2: 456789:[NA][NA][NA]
-	fm.AddChar('4', 0, 2, 0)
-	fm.AddChar('5', 1, 2, 0)
-	fm.AddChar('6', 2, 2, 0)
-	fm.AddChar('7', 3, 2, 0)
-	fm.AddChar('8', 4, 2, 0)
-	fm.AddChar('9', 5, 2, 0)
-	fm.AddChar(':', 6, 2, 0)
-
-	// Row 3: [NA]?[NA]ABCDEFG
-	fm.AddChar('?', 1, 3, 0)
-	fm.AddChar('A', 3, 3, 0)
-	fm.AddChar('B', 4, 3, 0)
-	fm.AddChar('C', 5, 3, 0)
-	fm.AddChar('D', 6, 3, 0)
-	fm.AddChar('E', 7, 3, 0)
-	fm.AddChar('F', 8, 3, 0)
-	fm.AddChar('G', 9, 3, 0)
-
-	// Row 4: HIJKLMNOPQ
-	fm.AddChar('H', 0, 4, 0)
-	fm.AddChar('I', 1, 4, 0)
-	fm.AddChar('J', 2, 4, 0)
-	fm.AddChar('K', 3, 4, 0)
-	fm.AddChar('L', 4, 4, 0)
-	fm.AddChar('M', 5, 4, 0)
-	fm.AddChar('N', 6, 4, 0)
-	fm.AddChar('O', 7, 4, 0)
-	fm.AddChar('P', 8, 4, 0)
-	fm.AddChar('Q', 9, 4, 0)
-
-	// Row 5: RSTUVWXYZ[NA]
-	fm.AddChar('R', 0, 5, 0)
-	fm.AddChar('S', 1, 5, 0)
-	fm.AddChar('T', 2, 5, 0)
-	fm.AddChar('U', 3, 5, 0)
-	fm.AddChar('V', 4, 5, 0)
-	fm.AddChar('W', 5, 5, 0)
-	fm.AddChar('X', 6, 5, 0)
-	fm.AddChar('Y', 7, 5, 0)
-	fm.AddChar('Z', 8, 5, 0)
-
-	// Space and missing characters
-	fm.AddBlank(' ', 8)
-	fm.AddBlank('-', 8)
-	fm.AddBlank(',', 8)
-	fm.AddBlank('"', 8)
-
-	return fm
-}
-
 // ScrollText manages scrolling text
-type scrollGlyph struct {
-	image   *ebiten.Image
-	offset  float64
-	advance float64
-}
 
 type ScrollText struct {
 	renderer      *scrolling.Scrolling
-	glyphs        []scrollGlyph
+	glyphs        []scrolling.Glyph
 	scrollX       float64
 	speed         float64
 	contentLength float64
-	charHeight    float64
 	vertical      bool // For vertical scrolling
 }
 
 // NewScrollText creates a new scrolling text
-func NewScrollText(text string, fontImg *ebiten.Image, fontMap *FontMap, speed float64, vertical bool) *ScrollText {
-	s := &ScrollText{
-		glyphs:     make([]scrollGlyph, 0, len(text)),
-		speed:      speed,
-		charHeight: float64(fontMap.charHeight),
-		vertical:   vertical,
-	}
-	for _, char := range text {
-		char = unicode.ToUpper(char)
-		mapping, ok := fontMap.chars[char]
-		if vertical {
-			s.glyphs = append(s.glyphs, scrollGlyph{
-				image:   fontMap.glyphImage(fontImg, char, mapping, ok),
-				offset:  s.contentLength,
-				advance: s.charHeight,
-			})
-			s.contentLength += s.charHeight
-			continue
-		}
-		if !ok {
-			continue
-		}
-		advance := float64(mapping.width)
-		s.glyphs = append(s.glyphs, scrollGlyph{
-			image:   fontMap.glyphImage(fontImg, char, mapping, true),
-			offset:  s.contentLength,
-			advance: advance,
-		})
-		s.contentLength += advance
-	}
-
-	glyphs := make([]scrolling.Glyph, len(s.glyphs))
-	for i, g := range s.glyphs {
-		glyphs[i] = scrolling.Glyph{Image: g.image, Advance: g.advance}
-	}
-	var err error
-	s.renderer, err = scrolling.New(scrolling.Config{Glyphs: glyphs, Vertical: vertical})
+func NewScrollText(text string, atlas *scrolling.Atlas, speed float64, vertical bool) *ScrollText {
+	glyphs := atlas.Layout(text, scrolling.AtlasText{Vertical: vertical, SkipMissing: !vertical})
+	renderer, err := scrolling.New(scrolling.Config{Glyphs: glyphs, Vertical: vertical})
 	if err != nil {
 		panic(err)
 	}
-	return s
-}
-
-func (fm *FontMap) glyphImage(fontImg *ebiten.Image, char rune, mapping CharMapping, ok bool) *ebiten.Image {
-	if !ok || !mapping.drawable {
-		return nil
-	}
-	if glyph, exists := fm.glyphImages[char]; exists {
-		return glyph
-	}
-	rect := image.Rect(mapping.x, mapping.y, mapping.x+mapping.width, mapping.y+mapping.height)
-	glyph := fontImg.SubImage(rect).(*ebiten.Image)
-	fm.glyphImages[char] = glyph
-	return glyph
+	return &ScrollText{renderer: renderer, glyphs: glyphs, speed: speed, vertical: vertical, contentLength: renderer.Length()}
 }
 
 // Update updates the scroll position
@@ -552,9 +246,18 @@ func mustLoadImage(name string, data []byte) *ebiten.Image {
 // initScrollTexts initializes the scrolling texts
 func (g *Game) initScrollTexts() {
 	// Initialize font maps
-	bsFontMap := initBigScrollFont()
-	upFontMap := initUpScrollFont()
-	lFontMap := initSmallFont()
+	bsFontMap, err := presets.FontAtlas("grodan-kvack-kvack-demo", g.bsFont)
+	if err != nil {
+		panic(err)
+	}
+	upFontMap, err := presets.FontAtlas("grodan-up", g.upFont)
+	if err != nil {
+		panic(err)
+	}
+	lFontMap, err := presets.FontAtlas("grodan-small", g.lFont)
+	if err != nil {
+		panic(err)
+	}
 
 	// Main scroll text
 	mainText := "                                 HI AND WELCOME TO THE GRODAN AND KVACK KVACK DEMO (THAT NAME WILL PROBABLY MAKE US FAMOUS IN THE GUINNESS BOOK OF RECORDS - THE MOST STUPID NAME IN DEMO HISTORY.  THE PREVIOUS POSSESSORS OF THAT RECORD WAS OMEGA WITH -OMEGAKUL-.   I'M AFRAID WE WILL SOON BE BEATEN BY SYNC'S 'MJOFFE-DEMO', WITH TWO DOTS ABOVE THE 'O'.  DID YOU KNOW THAT THIS IS A COMMENT IN THE MIDDLE OF A SENTENCE? NO?  WE ALSO FORGOT, BUT LET'S CONTINUE WITH WHAT WE WERE WRITING BEFORE WE STARTED WRITING THIS RECORD-CRAP.), CODED BY NICK AND JAS OF THE CAREBEARS. GRAPHIXXXX BY TANIS, THE GREAT (?) OF THE MEGAMIGHTY CAREBEARS.        WE HAVE TO COVER TWO SUBJECTS IN THIS SCROLLTEXT - THE FANTASTIC WORLD OF HARDWARESCROLLERS  AND  GREETINGS....   LET'S START WITH THE STUFF YOU PROBABLY WANT US TO TALK THE MOST ABOUT - HARDWARESCROLLERS....        TIME: LATE MARCH 1989    PLACE: NICK'S COMPUTER ROOM     IT WORKS!!!!!!!  AFTER HAVING TRIED THE ZANY SCROLLTECHNIQUE ON BOTH NICK'S AND JAS' COMPUTERS, WE CONCLUDED THAT IT ACTUALLY WORKED.    ONE DAY LATER, OMEGA CALLS US AND GOES SOMETHING LIKE THIS: - HAAAA HAAAA  WE KNOW HOW TO SCROLL THE WHOLE SCREEN BOTH HORIZONTALLY AND VERTICALLY IN LESS THAN TEN SCANLINES!!!!!!         WE WERE AMAZED THAT THEY HAD ACTUALLY COME UP WITH THE SAME IDEA ON THE SAME DAY AS US, BUT AT LEAST NOBODY ELSE KNEW HOW TO DO IT.     WE MANAGED TO RELEASE THE FIRST HARDWARESCROLLER THE WORLD HAS SEEN, IN THE CUDDLY DEMOS, AND NOW WE ARE GOING TO USE IT COMERCIALLY (CODING GAMES, DICKHEAD)....     NOW A HINT HOW IT'S DONE:    IT HAS NOTHING TO DO WITH ANY OF THE SOUND-REGISTERS.....         HERE IS ANOTHER ADDRESS TO THE CAREBEARS:     T H E   C A R E B E A R S ,    D R A K E N B E R G S G   2 3    8 T R ,      1 1 7   4  1   S T O  C K H O L M ,     S W E  D E N .                NOW FOR SOME GREETINGS:   MEGADUNDERSUPERDUPERGREETINGS TO  ALL THE OTHER MEMBERS OF THE UNION, ESPECIALLY THE EXCEPTIONS (TANIS WISH TO GIVE A SPECIAL HI TO ES) AND THE REPLICANTS (GOODBYE, RATBOY! YOUR INTROS WERE GREAT).   NORMAL MEGAGREETINGS (IN MERIT-ORDER)(WOW) TO   SYNC (WE'VE CHANGED OUR MINDS, YOU'RE THE SECOND BEST SWEDISH CREW. WE JUST HADN'T SEEN MANY SCREENS BY YOU GUYS (IT'S UNDERSTANDABLE - YOU HAVE ONLY RELEASED THREE NOT VERY GOOD ONES)),  OMEGA (TOO BAD, YOU'RE NOT THE SECOND BEST ANYMORE.  PERHAPS IT HAS SOMETHING TO DO WITH  THE TERA-DISTER, THE 'TCB-E'-JATTEDUMMA'-SIGN OR THE FACT THAT SYNC IS BETTER), THE LOST BOYS (SEE YA' SOON AND WE'RE ANXIOUSLY AWAITING YOUR MEGAMEGADEMO)             SOMETHING BETWEEN MEGAGREETINGS AND NORMAL GREETINGS TO:   FLEXIBLE FRONT (GOODBYE), VECTOR (SO YOU CRACKED OUR DEMO, HUH? NICE SCREEN, BY THE WAY), GHOST (SO YOU TRIED TO CRACK OUR DEMO, HUH? GREAT SCREEN, BY THE WAY), 2 LIFE CREW (YOU ARE IMPROVING), MAGNUM FORCE (YOU SEEM TO BE THE BEST OPTIMIZERS IN FRANCE!), NORDIK CODERS (NICE SCREEN).   NORMAL GREETINGS TO:  FASHION (GOOD LUCK WITH YOUR DEMO), OVERLANDERS (THANKS FOR NOT INCLUDING CUDDLY IN YOUR DEMOBREAKER), NO CREW (ESPECIALLY ROCCO. YOU ARE IMPROVING), AUTOMATION (GREAT COMPACT DISKS), MEDWAY BOYS (NICE CD'S),  ST CONNEXION (HOPE YOUR DEMO WILL BE AS GOOD AS YOUR GRAPHICS), FOXX (COOL SCREEN), FOFT (KEEP ON COMPACTING), ZAE (WE HAD A GREAT TIME IN MARSEILLE), KREATORS (ESPECIALLY CHUD), M.A.R.K.U.S (PLEASE SPREAD THIS DEMO AS MUCH AS YOU SPREAD CUDDLY DEMOS), HACKATARIMAN (THANKS FOR ALL THE STUFF), THE ALLIANCE (ESPECIALLY OVERLANDERS (THANKS FOR TCB-FRIENDLY SCROLLTEXTS AND MANY NICE SCREENS), AND BLACK MONOLITH TEAM (YOUR DEMOSCREEN WAS THE BEST IN THE OLD ALLIANCE DEMO), BIRDY (SEND US YOUR CRACKS), LINKAN 'THE LINK' 'JUDGE LINK' LINKSSON (PING-PONG), NYARLOTHATEPS ADEPTS (STRANGE NAME, STRANGE GUYS), GROWTWIG ( NO COMMENT),  TONY KOLLBERG (TJENA, LYCKA TILL MED ASSEMBLERN)     END OF GREETINGS. IF YOU WERE NOT GREETED, TOO BAD. NORMAL FUCKING GREETINGS TO:  CONSTELLATIONS (NOONE WILL EVER COMPLAIN ABOUT TCB AND GET AWAY WITH IT, BESIDES YOUR DEMO WAS WORTHLESS). MEGA FUCKING GREETINGS TO:     MENACING CRACKING ALLIANCE (SO, YOU DON'T LIKE BEING CALLED LAMERS, HOW YA' LIKE BEING CALLED:       MOTHERFUCKIN'   BLEEDIN' (BRITTISH ENGLISH) ULTIMATE CHICKENBRAINS????!!!! I BET IT'S ALMOST AS FUN AS FUCKING GREET TCB).  END OF SCROLLTEXT. LET'S WRAP."
@@ -567,11 +270,11 @@ func (g *Game) initScrollTexts() {
 
 	smallText2 := "                               EVERYBODY THOUGHT IT WAS IMPOSSIBLE.....                                     EVEN WE THOUGHT IT WAS IMPOSSIBLE......                                       IT'S A PITY IT WASN'T.....                                                 THE CAREBEARS PRESENT THE UGLIEST DEMO SO FAR - THE GRODAN AND KVACK KVACK DEMO, A CONVERSION OF THE STUNNING TECHTECH DEMO BY SODAN AND MAGICIAN 42 (ON THE COMPUTER THAT CRASHES WHEN YOU ENTER SUPERVISOR MODE IN SEKA).   IT WAS UGLY ON THE AMIGA TOO, BUT IT SURE KNOCKED YOU OFF THE CHAIR WHEN YOU SAW IT THE FIRST TIME.    "
 
-	g.scrollText1 = NewScrollText(mainText, g.bsFont, bsFontMap, 2, false)
-	g.scrollText2 = NewScrollText(vertText, g.upFont, upFontMap, 3, true)
+	g.scrollText1 = NewScrollText(mainText, bsFontMap, 2, false)
+	g.scrollText2 = NewScrollText(vertText, upFontMap, 3, true)
 	g.scrollText2.scrollX = -100 // Start below screen
-	g.scrollText3 = NewScrollText(smallText1, g.lFont, lFontMap, 1, false)
-	g.scrollText4 = NewScrollText(smallText2, g.lFont, lFontMap, 2, false)
+	g.scrollText3 = NewScrollText(smallText1, lFontMap, 1, false)
+	g.scrollText4 = NewScrollText(smallText2, lFontMap, 2, false)
 }
 
 // initAudio initializes the audio system
