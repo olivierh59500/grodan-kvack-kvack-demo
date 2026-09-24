@@ -119,6 +119,8 @@ type Game struct {
 	// Images
 	bgGreen           *ebiten.Image
 	bgPink            *ebiten.Image
+	greenBackground   *composite.Background
+	pinkBackground    *composite.Background
 	upScrollRaster    *ebiten.Image
 	bigScrollRaster   *ebiten.Image
 	smallRasterTop    *ebiten.Image
@@ -194,6 +196,16 @@ func NewGame() *Game {
 
 	// Load images
 	g.loadImages()
+	background := composite.BackgroundConfig{PeriodX: screenWidth, PeriodY: screenHeight, CopiesX: 3, CopiesY: 2}
+	var err error
+	g.greenBackground, err = composite.NewBackground(background)
+	if err != nil {
+		panic(err)
+	}
+	g.pinkBackground, err = composite.NewBackground(background)
+	if err != nil {
+		panic(err)
+	}
 	for i := range spriteCount {
 		srcX := i * spriteStride
 		rect := image.Rect(srcX, 0, srcX+spriteWidth, spriteHeight)
@@ -392,8 +404,8 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	// Clear screen
 	screen.Fill(color.Black)
 
-	g.drawTiledBackground(screen, g.bgGreen, g.moveX, g.moveY)
-	g.drawTiledBackground(screen, g.bgPink, g.X, g.Y)
+	g.greenBackground.DrawAt(screen, g.bgGreen, g.moveX, g.moveY)
+	g.pinkBackground.DrawAt(screen, g.bgPink, g.X, g.Y)
 
 	// Draw sprites
 	g.drawSprites(screen)
@@ -406,26 +418,6 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 	// Draw small scrolls
 	g.drawSmallScrolls(screen)
-}
-
-func (g *Game) drawTiledBackground(screen, background *ebiten.Image, offsetX, offsetY float64) {
-	width := float64(background.Bounds().Dx())
-	height := float64(background.Bounds().Dy())
-	for y := range 2 {
-		tileY := offsetY + float64(screenHeight*y)
-		if tileY >= screenHeight || tileY+height <= 0 {
-			continue
-		}
-		for x := range 3 {
-			tileX := offsetX + float64(screenWidth*x)
-			if tileX >= screenWidth || tileX+width <= 0 {
-				continue
-			}
-			op := &ebiten.DrawImageOptions{}
-			op.GeoM.Translate(tileX, tileY)
-			composite.Instance{Image: background, Options: *op}.Draw(screen)
-		}
-	}
 }
 
 // drawSprites draws the animated sprites
