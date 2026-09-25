@@ -9,13 +9,15 @@ import (
 	"image"
 	"image/color"
 
+	kit "github.com/olivierh59500/democonstructionkit"
 	"github.com/olivierh59500/democonstructionkit/composite"
+	"github.com/olivierh59500/democonstructionkit/motion"
 	"github.com/olivierh59500/democonstructionkit/scrolling"
 	"github.com/olivierh59500/democonstructionkit/sound"
+	"github.com/olivierh59500/democonstructionkit/sprites"
 
 	_ "image/png"
 	"log"
-	"math"
 
 	"github.com/hajimehoshi/ebiten/v2"
 
@@ -30,8 +32,6 @@ const (
 	spriteWidth     = 16
 	spriteHeight    = 10
 	spriteStride    = 17
-	spriteBaseX     = 304
-	spriteBaseY     = 100
 	bigScrollXScale = 8
 	bigScrollYScale = 6
 )
@@ -129,7 +129,7 @@ type Game struct {
 	bsFont            *ebiten.Image
 	upFont            *ebiten.Image
 	lFont             *ebiten.Image
-	sprites           [spriteCount]*ebiten.Image
+	spriteGroup       *sprites.Group
 
 	// Canvases
 	bs2Canvas   *ebiten.Image
@@ -148,18 +148,6 @@ type Game struct {
 	X   float64
 	gox float64
 
-	ychange        float64
-	addy           float64
-	siny           float64
-	swing          float64
-	swingy         float64
-	swingSin       float64
-	swingCos       float64
-	swingYSin      float64
-	swingYCos      float64
-	spritePhaseSin [spriteCount]float64
-	spritePhaseCos [spriteCount]float64
-
 	// Scroll texts
 	scrollText1 *ScrollText
 	scrollText2 *ScrollText
@@ -176,22 +164,15 @@ type Game struct {
 // NewGame creates a new game instance
 func NewGame() *Game {
 	g := &Game{
-		moveY:     0,
-		howmuchY:  1,
-		moveX:     0,
-		howmuchX:  1,
-		bgcount:   0,
-		Y:         0,
-		hY:        1,
-		X:         0,
-		gox:       0,
-		ychange:   0,
-		addy:      0.1,
-		siny:      0,
-		swing:     0,
-		swingy:    0,
-		swingCos:  1,
-		swingYCos: 1,
+		moveY:    0,
+		howmuchY: 1,
+		moveX:    0,
+		howmuchX: 1,
+		bgcount:  0,
+		Y:        0,
+		hY:       1,
+		X:        0,
+		gox:      0,
 	}
 
 	// Load images
@@ -206,11 +187,23 @@ func NewGame() *Game {
 	if err != nil {
 		panic(err)
 	}
-	for i := range spriteCount {
+	frames := make([]*ebiten.Image, spriteCount)
+	for i := range frames {
 		srcX := i * spriteStride
 		rect := image.Rect(srcX, 0, srcX+spriteWidth, spriteHeight)
-		g.sprites[i] = g.sprite.SubImage(rect).(*ebiten.Image)
-		g.spritePhaseSin[i], g.spritePhaseCos[i] = math.Sincos(float64(i) * 0.2)
+		frames[i] = g.sprite.SubImage(rect).(*ebiten.Image)
+	}
+	formation, err := motion.NewHarmonicFormation(presets.GrodanSpriteFormationConfig())
+	if err != nil {
+		panic(err)
+	}
+	g.spriteGroup, err = sprites.NewGroup(sprites.GroupConfig{
+		Frames: frames, Count: spriteCount, FrameStride: 1, ScaleX: 2, ScaleY: 2,
+		Harmonic: formation, HarmonicClockStep: [2]float64{.02, .03},
+		HarmonicEnvelope: &motion.BounceBankConfig{Start: []float64{0}, Velocity: []float64{.1}, Min: -50, Max: 50},
+	})
+	if err != nil {
+		panic(err)
 	}
 
 	// Create canvases
@@ -366,20 +359,9 @@ func (g *Game) Update() error {
 	}
 	g.Y += g.hY
 
-	// Update sprite animation
-	if g.ychange > 50 {
-		g.addy = -0.1
+	if err := g.spriteGroup.Update(kit.Frame{}); err != nil {
+		return err
 	}
-	if g.ychange < -50 {
-		g.addy = 0.1
-	}
-	g.ychange += g.addy
-
-	g.swing += 0.02
-	g.swingy += 0.03
-	g.swingSin, g.swingCos = math.Sincos(g.swing)
-	g.swingYSin, g.swingYCos = math.Sincos(g.swingy)
-	g.siny = g.ychange * g.swingYSin
 
 	// Update scroll texts
 	if g.scrollText1 != nil {
@@ -408,7 +390,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	g.pinkBackground.DrawAt(screen, g.bgPink, g.X, g.Y)
 
 	// Draw sprites
-	g.drawSprites(screen)
+	g.spriteGroup.Draw(screen)
 
 	// Draw big scroll
 	g.drawBigScroll(screen)
@@ -418,29 +400,6 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 	// Draw small scrolls
 	g.drawSmallScrolls(screen)
-}
-
-// drawSprites draws the animated sprites
-func (g *Game) drawSprites(screen *ebiten.Image) {
-	if g.sprite == nil {
-		return
-	}
-
-	// Draw multiple sprites with different phases
-	for i, sprite := range g.sprites {
-		cosPhase := g.spritePhaseCos[i]
-		sinPhase := g.spritePhaseSin[i]
-		cosSwing := g.swingCos*cosPhase + g.swingSin*sinPhase
-		sinSwingY := g.swingYSin*cosPhase - g.swingYCos*sinPhase
-		x := spriteBaseX + 290*cosSwing
-		y := spriteBaseY + g.ychange*sinSwingY + g.siny
-
-		op := &ebiten.DrawImageOptions{}
-		op.GeoM.Scale(2, 2)
-		op.GeoM.Translate(x, y)
-
-		composite.Instance{Image: sprite, Options: *op}.Draw(screen)
-	}
 }
 
 // drawBigScroll draws the big scrolling text

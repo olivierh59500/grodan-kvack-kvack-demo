@@ -8,3 +8,8 @@ The choreography and assets remain in this repository. Reusable rendering and
 effects come from the published `github.com/olivierh59500/democonstructionkit`
 module pinned in `go.mod`. Music is opened with `sound.Open`; DCK selects the decoder from the asset and
 provides the configured stereo PCM format. The demo keeps its playback level and loop settings.
+
+The twelve sprite frames are drawn by `sprites.Group` with the reusable
+`motion.HarmonicFormation` preset. Two phase clocks and one bouncing amplitude
+envelope preserve the authored train while letting another screen change its
+image bank, sprite count, spacing, phase rates or wave amplitudes.
