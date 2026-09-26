@@ -18,3 +18,8 @@ The big, vertical and two small text lanes now use the same
 `scrolling.Config.Ribbon` transport. `presets.GrodanRibbons` keeps their
 independent fonts, strict return thresholds, speeds, scales and placement
 editable. The original four messages remain in `dck/internal/textdata`.
+
+The big, vertical and paired small ribbons now use three
+`composite.SurfaceLayer` instances. Each layer owns one bounded canvas and
+combines its text with editable raster passes and output copies; the two small
+scrolls keep their shared canvas and original draw order.

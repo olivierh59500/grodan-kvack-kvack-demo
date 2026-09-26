@@ -73,10 +73,8 @@ type Game struct {
 	lFont             *ebiten.Image
 	spriteGroup       *sprites.Group
 
-	// Canvases
-	bs2Canvas   *ebiten.Image
-	upCanvas    *ebiten.Image
-	smallCanvas *ebiten.Image
+	// Bounded text, raster and output compositions.
+	layers [3]*composite.SurfaceLayer
 
 	// Animation state
 	moveY    float64
@@ -89,9 +87,6 @@ type Game struct {
 	hY  float64
 	X   float64
 	gox float64
-
-	// Independent ribbons share the same DCK renderer and transport API.
-	scrolls [4]*scrolling.Scrolling
 
 	// Audio
 	audioContext     *audio.Context
@@ -145,22 +140,10 @@ func NewGame() *Game {
 		panic(err)
 	}
 
-	// Create canvases
-	g.bs2Canvas = newRenderTarget(640, 200)
-	g.upCanvas = newRenderTarget(32, 400)
-	g.smallCanvas = newRenderTarget(320, 32)
-
 	// Initialize scroll texts
 	g.initScrollTexts()
 
 	return g
-}
-
-func newRenderTarget(width, height int) *ebiten.Image {
-	return ebiten.NewImageWithOptions(
-		image.Rect(0, 0, width, height),
-		&ebiten.NewImageOptions{Unmanaged: true},
-	)
 }
 
 // loadImages loads all image assets
@@ -206,8 +189,17 @@ func (g *Game) initScrollTexts() {
 	texts := textdata.Messages()
 	recipes := presets.GrodanRibbons(texts,
 		bsFontMap, upFontMap, lFontMap)
-	for i := range g.scrolls {
-		g.scrolls[i], err = scrolling.New(scrolling.Config{Ribbon: &recipes[i]})
+	var scrolls [4]*scrolling.Scrolling
+	for i := range scrolls {
+		scrolls[i], err = scrolling.New(scrolling.Config{Ribbon: &recipes[i]})
+		if err != nil {
+			panic(err)
+		}
+	}
+	layers := presets.GrodanRasterLayers(scrolls, g.bigScrollRaster, g.upScrollRaster,
+		g.smallRasterTop, g.smallRasterBottom)
+	for i := range g.layers {
+		g.layers[i], err = composite.NewSurfaceLayer(layers[i])
 		if err != nil {
 			panic(err)
 		}
@@ -295,9 +287,9 @@ func (g *Game) Update() error {
 		return err
 	}
 
-	for _, index := range [...]int{0, 2, 3, 1} {
-		if g.scrolls[index] != nil {
-			if err := g.scrolls[index].Update(kit.Frame{}); err != nil {
+	for _, index := range [...]int{0, 2, 1} {
+		if g.layers[index] != nil {
+			if err := g.layers[index].Update(kit.Frame{}); err != nil {
 				return err
 			}
 		}
@@ -317,94 +309,11 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	// Draw sprites
 	g.spriteGroup.Draw(screen)
 
-	// Draw big scroll
-	g.drawBigScroll(screen)
-
-	// Draw up scroll
-	g.drawUpScroll(screen)
-
-	// Draw small scrolls
-	g.drawSmallScrolls(screen)
-}
-
-// drawBigScroll draws the big scrolling text
-func (g *Game) drawBigScroll(screen *ebiten.Image) {
-	if g.scrolls[0] == nil {
-		return
+	for _, layer := range g.layers {
+		if layer != nil {
+			layer.Draw(screen)
+		}
 	}
-
-	// Clear canvas
-	g.bs2Canvas.Clear()
-
-	// Draw the glyphs at their final size, without an intermediate canvas.
-	g.scrolls[0].Draw(g.bs2Canvas)
-
-	// Apply raster effect
-	op := &ebiten.DrawImageOptions{}
-	op.GeoM.Scale(4, 2)
-	op.Blend = ebiten.BlendSourceAtop
-	composite.Instance{Image: g.bigScrollRaster, Options: *op}.Draw(g.bs2Canvas)
-
-	// Draw to screen
-	op = &ebiten.DrawImageOptions{}
-	op.GeoM.Translate(0, 200)
-	screen.DrawImage(g.bs2Canvas, op)
-}
-
-// drawUpScroll draws the vertical scrolling text
-func (g *Game) drawUpScroll(screen *ebiten.Image) {
-	if g.scrolls[1] == nil {
-		return
-	}
-
-	// Clear canvas
-	g.upCanvas.Clear()
-
-	// Draw vertical scroll text
-	g.scrolls[1].Draw(g.upCanvas)
-
-	// Apply raster effect
-	maskOp := &ebiten.DrawImageOptions{}
-	maskOp.GeoM.Scale(2, 2)
-	maskOp.Blend = ebiten.BlendSourceAtop
-	composite.Instance{Image: g.upScrollRaster, Options: *maskOp}.Draw(g.upCanvas)
-
-	// Draw to screen at multiple positions
-	positions := [...]float64{0, 64, 128, 480, 544, 608}
-	for _, x := range positions {
-		drawOp := &ebiten.DrawImageOptions{}
-		drawOp.GeoM.Translate(x, 0)
-		screen.DrawImage(g.upCanvas, drawOp)
-	}
-}
-
-// drawSmallScrolls draws the small scrolling texts
-func (g *Game) drawSmallScrolls(screen *ebiten.Image) {
-	if g.scrolls[2] == nil || g.scrolls[3] == nil {
-		return
-	}
-
-	// Both scrolls share one render target. This lets Ebitengine batch their
-	// glyphs and masks before a single final draw to the screen.
-	g.smallCanvas.Clear()
-	g.scrolls[2].Draw(g.smallCanvas)
-	g.scrolls[3].Draw(g.smallCanvas)
-
-	op := &ebiten.DrawImageOptions{}
-	op.GeoM.Scale(2, 2)
-	op.Blend = ebiten.BlendSourceAtop
-	composite.Instance{Image: g.smallRasterTop, Options: *op}.Draw(g.smallCanvas)
-
-	op = &ebiten.DrawImageOptions{}
-	op.GeoM.Scale(2, 2)
-	op.GeoM.Translate(0, 24)
-	op.Blend = ebiten.BlendSourceAtop
-	composite.Instance{Image: g.smallRasterBottom, Options: *op}.Draw(g.smallCanvas)
-
-	op = &ebiten.DrawImageOptions{}
-	op.GeoM.Scale(2, 2)
-	op.GeoM.Translate(0, 16)
-	screen.DrawImage(g.smallCanvas, op)
 }
 
 // Layout returns the screen size
@@ -414,10 +323,10 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 // Cleanup releases resources
 func (g *Game) Cleanup() {
-	for i, scroll := range g.scrolls {
-		if scroll != nil {
-			_ = scroll.Close()
-			g.scrolls[i] = nil
+	for i, layer := range g.layers {
+		if layer != nil {
+			_ = layer.Close()
+			g.layers[i] = nil
 		}
 	}
 	if g.audioPlayer != nil {
