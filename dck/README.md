@@ -23,3 +23,8 @@ The big, vertical and paired small ribbons now use three
 `composite.SurfaceLayer` instances. Each layer owns one bounded canvas and
 combines its text with editable raster passes and output copies; the two small
 scrolls keep their shared canvas and original draw order.
+
+The two repeated backdrops use `effects.GatedBackgroundPair`. Its preset
+retains the first background's gated horizontal bounce and the second
+background's coupled X/Y boundary changes. A pure test checks the authored
+positions over 50,000 ticks; both images and motion limits are editable.

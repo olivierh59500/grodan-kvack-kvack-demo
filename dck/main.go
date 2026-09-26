@@ -11,6 +11,7 @@ import (
 
 	kit "github.com/olivierh59500/democonstructionkit"
 	"github.com/olivierh59500/democonstructionkit/composite"
+	"github.com/olivierh59500/democonstructionkit/effects"
 	"github.com/olivierh59500/democonstructionkit/motion"
 	"github.com/olivierh59500/democonstructionkit/scrolling"
 	"github.com/olivierh59500/democonstructionkit/sound"
@@ -61,8 +62,7 @@ type Game struct {
 	// Images
 	bgGreen           *ebiten.Image
 	bgPink            *ebiten.Image
-	greenBackground   *composite.Background
-	pinkBackground    *composite.Background
+	backgroundPair    *effects.GatedBackgroundPair
 	upScrollRaster    *ebiten.Image
 	bigScrollRaster   *ebiten.Image
 	smallRasterTop    *ebiten.Image
@@ -76,18 +76,6 @@ type Game struct {
 	// Bounded text, raster and output compositions.
 	layers [3]*composite.SurfaceLayer
 
-	// Animation state
-	moveY    float64
-	howmuchY float64
-	moveX    float64
-	howmuchX float64
-	bgcount  float64
-
-	Y   float64
-	hY  float64
-	X   float64
-	gox float64
-
 	// Audio
 	audioContext     *audio.Context
 	audioPlayer      *audio.Player
@@ -97,27 +85,12 @@ type Game struct {
 
 // NewGame creates a new game instance
 func NewGame() *Game {
-	g := &Game{
-		moveY:    0,
-		howmuchY: 1,
-		moveX:    0,
-		howmuchX: 1,
-		bgcount:  0,
-		Y:        0,
-		hY:       1,
-		X:        0,
-		gox:      0,
-	}
+	g := &Game{}
 
 	// Load images
 	g.loadImages()
-	background := composite.BackgroundConfig{PeriodX: screenWidth, PeriodY: screenHeight, CopiesX: 3, CopiesY: 2}
 	var err error
-	g.greenBackground, err = composite.NewBackground(background)
-	if err != nil {
-		panic(err)
-	}
-	g.pinkBackground, err = composite.NewBackground(background)
+	g.backgroundPair, err = effects.NewGatedBackgroundPair(presets.GrodanBackgroundPair(g.bgGreen, g.bgPink))
 	if err != nil {
 		panic(err)
 	}
@@ -239,49 +212,9 @@ func (g *Game) Update() error {
 		g.initAudio()
 	}
 
-	// Update background 1 animation
-	g.bgcount += 0.1
-
-	if g.moveY < -400 {
-		g.howmuchY = 1
+	if err := g.backgroundPair.Update(kit.Frame{}); err != nil {
+		return err
 	}
-	if g.moveY > 0 {
-		g.howmuchY = -1
-	}
-	g.moveY += g.howmuchY
-
-	if g.bgcount > 10 {
-		if g.moveX < -640*2 {
-			g.howmuchX = 16
-		}
-		if g.moveX > 0 {
-			g.howmuchX = -16
-		}
-		g.moveX += g.howmuchX
-	}
-
-	if g.bgcount > 20 {
-		g.bgcount = 0
-	}
-
-	// Update background 2 animation
-	if g.Y < -400 {
-		g.hY = 2
-		g.gox = 16
-	}
-	if g.Y > 0 {
-		g.hY = -2
-		g.gox = -16
-	}
-
-	g.X += g.gox
-	if g.X < -710 {
-		g.X = -710
-	}
-	if g.X > 0 {
-		g.X = 0
-	}
-	g.Y += g.hY
 
 	if err := g.spriteGroup.Update(kit.Frame{}); err != nil {
 		return err
@@ -303,8 +236,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	// Clear screen
 	screen.Fill(color.Black)
 
-	g.greenBackground.DrawAt(screen, g.bgGreen, g.moveX, g.moveY)
-	g.pinkBackground.DrawAt(screen, g.bgPink, g.X, g.Y)
+	g.backgroundPair.Draw(screen)
 
 	// Draw sprites
 	g.spriteGroup.Draw(screen)
@@ -323,6 +255,10 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 // Cleanup releases resources
 func (g *Game) Cleanup() {
+	if g.backgroundPair != nil {
+		_ = g.backgroundPair.Close()
+		g.backgroundPair = nil
+	}
 	for i, layer := range g.layers {
 		if layer != nil {
 			_ = layer.Close()
