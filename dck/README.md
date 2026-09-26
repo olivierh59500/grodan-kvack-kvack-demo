@@ -13,3 +13,8 @@ The twelve sprite frames are drawn by `sprites.Group` with the reusable
 `motion.HarmonicFormation` preset. Two phase clocks and one bouncing amplitude
 envelope preserve the authored train while letting another screen change its
 image bank, sprite count, spacing, phase rates or wave amplitudes.
+
+The big, vertical and two small text lanes now use the same
+`scrolling.Config.Ribbon` transport. `presets.GrodanRibbons` keeps their
+independent fonts, strict return thresholds, speeds, scales and placement
+editable. The original four messages remain in `dck/internal/textdata`.

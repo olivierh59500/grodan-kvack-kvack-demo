@@ -3,6 +3,7 @@ package grodan
 import (
 	"encoding/binary"
 	"github.com/olivierh59500/democonstructionkit/font"
+	"github.com/olivierh59500/democonstructionkit/motion"
 	"github.com/olivierh59500/democonstructionkit/scrolling"
 	"image"
 	"math"
@@ -73,20 +74,31 @@ func TestScrollTextCachesGlyphsAndPreservesSpacing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	scroll := NewScrollText("a a", fontMap, 1, false)
-	if got, want := len(scroll.glyphs), 3; got != want {
+	glyphs := fontMap.Layout("a a", scrolling.AtlasText{SkipMissing: true})
+	if got, want := len(glyphs), 3; got != want {
 		t.Fatalf("glyph count = %d, want %d", got, want)
 	}
-	if got, want := scroll.contentLength, float64(24); got != want {
+	config := scrolling.RibbonConfig{Text: "a a", Font: fontMap, SkipMissing: true,
+		CullAdvance: 40, Clock: motion.RibbonClockConfig{Velocity: -1, Restart: 640,
+			Multiplier: 1, Wrap: motion.RibbonWrapBelow}}
+	scroll, err := scrolling.New(scrolling.Config{Ribbon: &config})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer scroll.Close()
+	if scroll.RibbonController() == nil {
+		t.Fatal("scrolling facade did not expose the ribbon controller")
+	}
+	if got, want := scroll.RibbonController().Length(), float64(24); got != want {
 		t.Fatalf("content length = %v, want %v", got, want)
 	}
-	if scroll.glyphs[1].Image != nil {
+	if glyphs[1].Image != nil {
 		t.Fatal("space unexpectedly has a drawable glyph")
 	}
-	if scroll.glyphs[0].Image != scroll.glyphs[2].Image {
+	if glyphs[0].Image != glyphs[2].Image {
 		t.Fatal("repeated character did not reuse its cached sub-image")
 	}
-	if got, want := scroll.glyphs[2].Offset, float64(16); got != want {
+	if got, want := glyphs[2].Offset, float64(16); got != want {
 		t.Fatalf("last glyph offset = %v, want %v", got, want)
 	}
 }
