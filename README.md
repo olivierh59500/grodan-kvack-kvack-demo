@@ -2,6 +2,25 @@
 
 A faithful port of the classic Atari ST demo "Grodan and Kvack Kvack" by The Carebears (TCB), originally created by Nick and Jas with graphics by Tanis. This port is written in Go using the Ebiten 2D game engine.
 
+<!-- Project showcase -->
+## Screenshots
+
+[![Layered colorful scrolltext and large rainbow lettering over a patterned background](docs/media/screenshot-1.png)](docs/media/screenshot-1.png)
+
+Layered colorful scrolltext and large rainbow lettering over a patterned background.
+
+## Video
+
+[![Animated preview of Grodan Kvack Kvack Demo](docs/media/preview.gif)](https://github.com/olivierh59500/grodan-kvack-kvack-demo/raw/refs/heads/main/docs/media/preview.mp4)
+
+**[Watch or download the 24-second MP4 preview with sound](https://github.com/olivierh59500/grodan-kvack-kvack-demo/raw/refs/heads/main/docs/media/preview.mp4)**
+
+This preview is captured from the Go production.
+
+The animated image is silent; the MP4 includes the soundtrack.
+
+<!-- End project showcase -->
+
 ## Overview
 
 This demo recreates the visual effects of the original 1989 Atari ST demo, featuring:
